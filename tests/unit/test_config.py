@@ -40,6 +40,20 @@ class TestConfigurationBasics:
         assert cfg.MONGODB_DATABASE == "ota_rag_test_db"
         assert cfg.MONGODB_URI == "mongodb://localhost:27017"
 
+    def test_testing_config_custom_test_env_vars(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "MONGODB_TEST_URI": "mongodb://test-cluster:27017",
+                "MONGODB_TEST_DATABASE": "custom_test_suite_db",
+                "SECRET_KEY": "test-custom-secret",
+            },
+        ):
+            cfg = get_config("testing")
+            assert cfg.MONGODB_URI == "mongodb://test-cluster:27017"
+            assert cfg.MONGODB_DATABASE == "custom_test_suite_db"
+            assert cfg.SECRET_KEY == "test-custom-secret"
+
     def test_custom_port_and_max_content_length(self) -> None:
         with patch.dict(
             os.environ,
@@ -65,6 +79,40 @@ class TestConfigurationBasics:
             cfg = get_config("development")
             assert cfg.PORT == 5000
             assert cfg.MAX_CONTENT_LENGTH == 16 * 1024 * 1024
+
+    def test_timeout_and_pool_size_parsing(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "MONGODB_CONNECT_TIMEOUT_MS": "3500",
+                "MONGODB_SERVER_SELECTION_TIMEOUT_MS": "4500",
+                "MONGODB_SOCKET_TIMEOUT_MS": "12000",
+                "MONGODB_MAX_POOL_SIZE": "80",
+                "MONGODB_MIN_POOL_SIZE": "10",
+            },
+        ):
+            cfg = get_config("development")
+            assert cfg.MONGODB_CONNECT_TIMEOUT_MS == 3500
+            assert cfg.MONGODB_SERVER_SELECTION_TIMEOUT_MS == 4500
+            assert cfg.MONGODB_SOCKET_TIMEOUT_MS == 12000
+            assert cfg.MONGODB_MAX_POOL_SIZE == 80
+            assert cfg.MONGODB_MIN_POOL_SIZE == 10
+
+    def test_timeout_and_pool_size_invalid_fallbacks(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "MONGODB_CONNECT_TIMEOUT_MS": "invalid",
+                "MONGODB_SERVER_SELECTION_TIMEOUT_MS": "invalid",
+                "MONGODB_SOCKET_TIMEOUT_MS": "invalid",
+                "MONGODB_MAX_POOL_SIZE": "invalid",
+                "MONGODB_MIN_POOL_SIZE": "invalid",
+            },
+        ):
+            # Should not raise exception, falls back to existing values
+            cfg = get_config("development")
+            assert isinstance(cfg.MONGODB_CONNECT_TIMEOUT_MS, int)
+            assert isinstance(cfg.MONGODB_MAX_POOL_SIZE, int)
 
     def test_get_config_fallback_to_development(self) -> None:
         cfg = get_config("unknown_environment")
@@ -190,6 +238,36 @@ class TestProductionValidation:
         ):
             cfg = get_config("production")
             with pytest.raises(ValueError, match="MONGODB_DATABASE must be set in production"):
+                cfg.validate()
+
+    def test_invalid_production_port(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "APP_ENV": "production",
+                "SECRET_KEY": "valid-and-sufficiently-long-secret-key-prod",
+                "MONGODB_URI": "mongodb://localhost:27017",
+                "MONGODB_DATABASE": "prod_db",
+                "PORT": "70000",
+            },
+        ):
+            cfg = get_config("production")
+            with pytest.raises(ValueError, match="PORT must be between 1 and 65535"):
+                cfg.validate()
+
+    def test_invalid_production_max_content_length(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "APP_ENV": "production",
+                "SECRET_KEY": "valid-and-sufficiently-long-secret-key-prod",
+                "MONGODB_URI": "mongodb://localhost:27017",
+                "MONGODB_DATABASE": "prod_db",
+                "MAX_CONTENT_LENGTH": "-1",
+            },
+        ):
+            cfg = get_config("production")
+            with pytest.raises(ValueError, match="MAX_CONTENT_LENGTH must be a positive integer"):
                 cfg.validate()
 
     def test_create_app_fails_fast_on_invalid_production(self) -> None:

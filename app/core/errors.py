@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Optional
-from flask import Flask, jsonify, Response
+from flask import Flask, g, has_request_context, jsonify, Response
 from pydantic import ValidationError as PydanticValidationError
 from werkzeug.exceptions import HTTPException
 
@@ -81,14 +81,18 @@ def _build_error_payload(
     message: str,
     details: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
-    """Helper to build standardized JSON error envelope."""
+    """Helper to build standardized JSON error envelope with correlation ID."""
+    error_info: dict[str, Any] = {
+        "code": code,
+        "message": message,
+        "details": details or {},
+    }
+    if has_request_context() and hasattr(g, "request_id"):
+        error_info["request_id"] = g.request_id
+
     return {
         "status": "error",
-        "error": {
-            "code": code,
-            "message": message,
-            "details": details or {},
-        },
+        "error": error_info,
     }
 
 
@@ -137,4 +141,3 @@ def register_error_handlers(app: Flask) -> None:
         logger.exception(f"Unhandled exception: {err}")
         payload = _build_error_payload("INTERNAL_SERVER_ERROR", "An unexpected error occurred")
         return jsonify(payload), 500
-

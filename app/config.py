@@ -64,12 +64,17 @@ class BaseConfig:
     # MongoDB connection
     MONGODB_URI: str = "mongodb://localhost:27017"
     MONGODB_DATABASE: str = "ota_rag_db"
-    MONGO_CONNECT_TIMEOUT_MS: int = 2000
-    MONGO_SERVER_SELECTION_TIMEOUT_MS: int = 2000
+    MONGODB_CONNECT_TIMEOUT_MS: int = 5000
+    MONGODB_SERVER_SELECTION_TIMEOUT_MS: int = 5000
+    MONGODB_SOCKET_TIMEOUT_MS: int = 10000
+    MONGODB_MAX_POOL_SIZE: int = 50
+    MONGODB_MIN_POOL_SIZE: int = 5
 
     # Backwards compatibility aliases
     MONGO_URI: str = MONGODB_URI
     MONGO_DB_NAME: str = MONGODB_DATABASE
+    MONGO_CONNECT_TIMEOUT_MS: int = MONGODB_CONNECT_TIMEOUT_MS
+    MONGO_SERVER_SELECTION_TIMEOUT_MS: int = MONGODB_SERVER_SELECTION_TIMEOUT_MS
 
     @classmethod
     def load_from_env(cls) -> None:
@@ -106,18 +111,41 @@ class BaseConfig:
         cls.MONGO_URI = cls.MONGODB_URI
         cls.MONGO_DB_NAME = cls.MONGODB_DATABASE
 
-        # Timeout settings
-        timeout_val = os.getenv("MONGO_CONNECT_TIMEOUT_MS")
-        if timeout_val is not None:
+        # Timeout & pool sizing settings
+        connect_t = os.getenv("MONGODB_CONNECT_TIMEOUT_MS", os.getenv("MONGO_CONNECT_TIMEOUT_MS"))
+        if connect_t is not None:
             try:
-                cls.MONGO_CONNECT_TIMEOUT_MS = int(timeout_val)
+                cls.MONGODB_CONNECT_TIMEOUT_MS = int(connect_t)
+                cls.MONGO_CONNECT_TIMEOUT_MS = cls.MONGODB_CONNECT_TIMEOUT_MS
             except ValueError:
                 pass
 
-        server_sel_val = os.getenv("MONGO_SERVER_SELECTION_TIMEOUT_MS")
-        if server_sel_val is not None:
+        server_sel_t = os.getenv("MONGODB_SERVER_SELECTION_TIMEOUT_MS", os.getenv("MONGO_SERVER_SELECTION_TIMEOUT_MS"))
+        if server_sel_t is not None:
             try:
-                cls.MONGO_SERVER_SELECTION_TIMEOUT_MS = int(server_sel_val)
+                cls.MONGODB_SERVER_SELECTION_TIMEOUT_MS = int(server_sel_t)
+                cls.MONGO_SERVER_SELECTION_TIMEOUT_MS = cls.MONGODB_SERVER_SELECTION_TIMEOUT_MS
+            except ValueError:
+                pass
+
+        socket_t = os.getenv("MONGODB_SOCKET_TIMEOUT_MS")
+        if socket_t is not None:
+            try:
+                cls.MONGODB_SOCKET_TIMEOUT_MS = int(socket_t)
+            except ValueError:
+                pass
+
+        max_pool = os.getenv("MONGODB_MAX_POOL_SIZE")
+        if max_pool is not None:
+            try:
+                cls.MONGODB_MAX_POOL_SIZE = int(max_pool)
+            except ValueError:
+                pass
+
+        min_pool = os.getenv("MONGODB_MIN_POOL_SIZE")
+        if min_pool is not None:
+            try:
+                cls.MONGODB_MIN_POOL_SIZE = int(min_pool)
             except ValueError:
                 pass
 
