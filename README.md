@@ -1,214 +1,126 @@
-# OTA RAG Bot Backend - Phase 1.1
+# OTA RAG Bot Backend - Centralized Configuration
 
 Production-grade Flask backend foundation for an **Online Travel Agency (OTA) Retrieval-Augmented Generation (RAG) Bot**.
 
 ---
 
-## 1. Overview & Architecture
+## 1. Architectural Overview
 
-This repository establishes the foundational backend architecture (**Phase 1.1 blueprint**) for the OTA RAG Bot. It provides a modular, production-ready structure built on Python 3.12+ and Flask using the **Application Factory Pattern**.
+The backend uses Flask with the **Application Factory Pattern** (`create_app()`) and a **Centralized Environment-based Configuration** system:
 
-### Key Architectural Highlights
-- **Application Factory Pattern**: `create_app()` enables clean environment switching (`development`, `testing`, `production`) and isolated test executions.
-- **Strict Configuration Separation**: Driven by environment variables and `python-dotenv`, with dedicated configurations and no hardcoded secrets.
-- **Resilient MongoDB Extension**: Custom `MongoExtension` wrapping PyMongo with non-blocking initialization, connection pooling, and health probing.
-- **Pydantic Validation**: Strong request/response typing and serialization for health probes and API contracts.
-- **Centralized Error Handling**: Standardized JSON error response envelope across all HTTP and domain exceptions.
-- **Production Logging**: Structured console logging with timestamps, process IDs, log levels, and module origins.
-- **Enterprise-ready Health Checks**: Dedicated liveness (`/live`) and readiness (`/ready`) endpoints designed for container orchestrators (Kubernetes/ECS).
+- **Environment-Specific Profiles**: Clean separation between `DevelopmentConfig`, `TestingConfig`, and `ProductionConfig` inheriting from `BaseConfig`.
+- **12-Factor Compliant**: In production and testing, configurations are derived strictly from environment variables. Local `.env` files are loaded via `python-dotenv` for local development only.
+- **Fail-Fast Startup Validation**: In production mode (`APP_ENV=production`), required security and infrastructure settings (`SECRET_KEY`, `MONGODB_URI`, `MONGODB_DATABASE`, `PORT`, `MAX_CONTENT_LENGTH`) are rigorously validated before the app boots.
+- **Strict Secret Protection**: Sensitive credentials (such as `SECRET_KEY` and credentials in `MONGODB_URI`) are masked and never exposed in application logs, error responses, or health probes.
+- **Dependency Isolation**: Testing profiles (`TestingConfig`) allow the complete test suite to execute reliably without requiring an active MongoDB cluster.
 
 ---
 
-## 2. Project Directory Structure
+## 2. Configuration Reference
 
-```text
-helping_bot/
-├── app/
-│   ├── __init__.py              # Application factory (create_app)
-│   ├── config.py                # Environment configuration classes
-│   ├── extensions.py            # PyMongo extension wrapper
-│   ├── api/
-│   │   ├── __init__.py          # API package
-│   │   └── v1/
-│   │       ├── __init__.py      # Blueprint aggregation for v1
-│   │       └── health.py        # Health, liveness, and readiness routes
-│   ├── core/
-│   │   ├── __init__.py          # Core package
-│   │   ├── errors.py            # Custom exceptions & global error handlers
-│   │   └── logging.py           # Structured production logging setup
-│   ├── schemas/
-│   │   ├── __init__.py          # Schemas package
-│   │   └── health.py            # Pydantic schemas for health responses
-│   ├── models/
-│   │   └── __init__.py          # Database entities (future phases)
-│   └── services/
-│       └── __init__.py          # Domain business logic (future phases)
-├── tests/
-│   ├── __init__.py
-│   ├── conftest.py              # Pytest fixtures (app, client, runner)
-│   ├── unit/
-│   │   ├── __init__.py
-│   │   ├── test_config.py       # Configuration tests
-│   │   └── test_errors.py       # Exception and error handler tests
-│   └── integration/
-│       ├── __init__.py
-│       └── test_health.py       # API route and probe tests
-├── .env.example                 # Template for environment configuration
-├── .gitignore                   # Comprehensive ignore rules
-├── pytest.ini                   # Pytest discovery and coverage configuration
-├── requirements.txt             # Pinned dependency specifications
-├── run.py                       # Application execution entry point
-└── README.md                    # Project documentation
-```
+All settings can be configured using environment variables:
+
+| Variable | Type | Default Value | Environments | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `APP_ENV` | `string` | `development` | All | Application environment profile: `development`, `testing`, or `production`. |
+| `SECRET_KEY` | `string` | *dev placeholder* | All | Cryptographic key for session signing and tokens. **Required in production** ($\ge 16$ chars, non-placeholder). |
+| `MONGODB_URI` | `string` | `mongodb://localhost:27017` | All | MongoDB connection URI (`mongodb://` or `mongodb+srv://`). **Required in production**. |
+| `MONGODB_DATABASE`| `string` | `ota_rag_db` | All | Target MongoDB database name. **Required in production**. |
+| `LOG_LEVEL` | `string` | `INFO` (`DEBUG` in dev/test) | All | Logging verbosity: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. |
+| `PORT` | `integer`| `5000` | All | HTTP server listening port ($1 \le \text{port} \le 65535$). |
+| `MAX_CONTENT_LENGTH`| `integer`| `16777216` (16 MB) | All | Maximum allowed request body size in bytes. |
+
+*Note: For backward compatibility, `MONGO_URI` and `MONGO_DB_NAME` are supported as fallbacks for `MONGODB_URI` and `MONGODB_DATABASE`.*
 
 ---
 
-## 3. Prerequisites
+## 3. Environment Behavior & Startup Validation
 
-- **Python**: Version `3.12+`
-- **MongoDB**: Version `6.0+` or `7.0+` (local or remote MongoDB Atlas)
-- **Virtual Environment Tool**: `venv` or `virtualenv`
+### Local Development (`APP_ENV=development`)
+- Automatically loads environment variables from `.env` via `load_environment()`.
+- Debug mode is enabled (`DEBUG=True`).
+- Safe default credentials are used for development convenience if `.env` is omitted.
+
+### Automated Testing (`APP_ENV=testing`)
+- `.env` file loading is automatically skipped to prevent polluting test state.
+- `TESTING=True` and `DEBUG=True`.
+- Targets `ota_rag_test_db`.
+- Tests run with non-blocking MongoDB extensions (`connect=False`), allowing full test execution without a live MongoDB database.
+
+### Production (`APP_ENV=production`)
+- `.env` file loading is explicitly disabled; all configuration must be provided via the host/container environment.
+- Debug mode is disabled (`DEBUG=False`).
+- **Startup Validation**: `ProductionConfig.validate()` executes during `create_app()`. The application will raise a `ValueError` and fail to boot if:
+  - `SECRET_KEY` is not set, matches known insecure placeholders, or is fewer than 16 characters.
+  - `MONGODB_URI` is not set or does not begin with `mongodb://` or `mongodb+srv://`.
+  - `MONGODB_DATABASE` is not set or empty.
+  - `PORT` is not within $1 - 65535$.
+  - `MAX_CONTENT_LENGTH` is $\le 0$.
 
 ---
 
-## 4. Setup & Installation
+## 4. Secret Masking & Protection
 
-### Step 1: Clone & Navigate to Repository
+To prevent accidental credential leakage in observability tools or client responses:
+- `mask_secret(val)` masks keys (e.g. `supersecretkey` $\rightarrow$ `supe...****`).
+- `mask_connection_uri(uri)` redacts basic authentication credentials in URIs (e.g. `mongodb://admin:pass@host:27017/db` $\rightarrow$ `mongodb://admin:****@host:27017/db`).
+- Health probes (`/api/v1/health`) return only high-level status flags (`healthy`, `unreachable`), omitting connection strings or database names.
+- Error handlers return sanitized JSON envelopes with no raw tracebacks or secret parameters.
+
+---
+
+## 5. Local Setup Instructions
+
+### 1. Clone & Setup Virtual Environment
 ```bash
 cd helping_bot
-```
-
-### Step 2: Create and Activate Virtual Environment
-
-**On Linux / macOS:**
-```bash
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate       # Linux/macOS
+# .\.venv\Scripts\Activate.ps1  # Windows PowerShell
 ```
 
-**On Windows (PowerShell):**
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
-### Step 3: Install Dependencies
+### 2. Install Dependencies
 ```bash
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### Step 4: Configure Environment Variables
-Copy the example environment file and customize your settings:
+### 3. Setup Local Environment Variables
+Create your local `.env` from the provided template:
 ```bash
 cp .env.example .env
 ```
+*(The `.env` file is excluded in `.gitignore` to prevent committing secrets).*
 
-Ensure `.env` contains:
-```ini
-FLASK_ENV=development
-FLASK_DEBUG=True
-APP_NAME=ota-rag-bot
-HOST=0.0.0.0
-PORT=5000
-SECRET_KEY=generate-a-secure-random-key-for-local-dev
-LOG_LEVEL=INFO
-MONGO_URI=mongodb://localhost:27017
-MONGO_DB_NAME=ota_rag_db
-```
-
----
-
-## 5. Running the Application
-
-### Development Server
-Run directly using the entry point:
+### 4. Run the Application
+**Development Server:**
 ```bash
 python run.py
 ```
-Or via the Flask CLI:
+**Production Server (Gunicorn):**
 ```bash
-flask --app run:app run --host 0.0.0.0 --port 5000 --debug
-```
-
-### Production WSGI Server (Gunicorn)
-For Linux/production deployments, start the application via Gunicorn:
-```bash
+APP_ENV=production \
+SECRET_KEY="production-secret-key-at-least-16-chars" \
+MONGODB_URI="mongodb+srv://user:pass@cluster.mongodb.net" \
+MONGODB_DATABASE="ota_prod" \
 gunicorn --workers 4 --bind 0.0.0.0:5000 run:app
 ```
 
 ---
 
-## 6. API Reference (Phase 1.1)
+## 6. Testing
 
-| Method | Endpoint | Description | Sample Status |
-| :--- | :--- | :--- | :--- |
-| `GET` | `/` | Root service info | `200 OK` |
-| `GET` | `/api/v1/health` | Comprehensive health check (app + MongoDB) | `200 OK` / `503 Service Unavailable` |
-| `GET` | `/api/v1/health/live` | Liveness probe for process orchestrators | `200 OK` |
-| `GET` | `/api/v1/health/ready` | Readiness probe verifying critical dependencies | `200 OK` / `503 Service Unavailable` |
-
-### Sample Response (`GET /api/v1/health`)
-```json
-{
-  "dependencies": {
-    "mongodb": {
-      "message": "Connected to cluster",
-      "status": "healthy"
-    }
-  },
-  "environment": "development",
-  "service": "ota-rag-bot",
-  "status": "healthy",
-  "timestamp": "2026-11-14T07:22:15.123456Z",
-  "version": "0.1.0"
-}
-```
-
-### Error Response Envelope
-```json
-{
-  "status": "error",
-  "error": {
-    "code": "NOT_FOUND",
-    "message": "The requested URL was not found on the server",
-    "details": {}
-  }
-}
-```
-
----
-
-## 7. Running Tests & Code Quality
-
-Run the test suite with coverage reporting:
+Run all unit and integration tests:
 ```bash
 pytest
 ```
 
-Run only unit tests:
+Run only configuration unit tests:
 ```bash
-pytest -m unit
+pytest tests/unit/test_config.py -v
 ```
 
-Run only integration tests:
+Generate coverage report:
 ```bash
-pytest -m integration
+pytest --cov=app --cov-report=term-missing
 ```
-
-Generate HTML coverage report:
-```bash
-pytest --cov=app --cov-report=html
-```
-
----
-
-## 8. Phase Roadmap
-
-- [x] **Phase 1.1**: Project setup, application factory, configuration, PyMongo extension, health endpoints, test harness.
-- [ ] **Phase 1.2**: MongoDB schemas and indexing (hotel/flight collections, conversational sessions).
-- [ ] **Phase 2.1**: Embedding pipeline and vector database integration.
-- [ ] **Phase 2.2**: FAQ ingestion and semantic search CRUD.
-- [ ] **Phase 3.1**: OTA Live API connectors (booking lookup, inventory checking).
-- [ ] **Phase 3.2**: LLM RAG agent orchestration and guardrails.
-

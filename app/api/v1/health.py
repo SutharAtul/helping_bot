@@ -29,7 +29,7 @@ def health_check() -> tuple[Response, int]:
         status=overall_status,
         service=current_app.config.get("APP_NAME", "ota-rag-bot"),
         version=current_app.config.get("VERSION", "0.1.0"),
-        environment=current_app.config.get("ENV", "unknown"),
+        environment=current_app.config.get("APP_ENV") or current_app.config.get("ENV", "unknown"),
         dependencies={"mongodb": mongo_status},
     )
 
@@ -65,4 +65,3 @@ def readiness() -> tuple[Response, int]:
 
     status_code = 200 if is_ready else 503
     return jsonify(response_data.model_dump(mode="json")), status_code
-

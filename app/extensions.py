@@ -23,8 +23,8 @@ class MongoExtension:
 
     def init_app(self, app: Flask) -> None:
         """Initialize MongoDB client with Flask app configuration."""
-        uri: str = app.config.get("MONGO_URI", "mongodb://localhost:27017")
-        db_name: str = app.config.get("MONGO_DB_NAME", "ota_rag_db")
+        uri: str = app.config.get("MONGODB_URI") or app.config.get("MONGO_URI", "mongodb://localhost:27017")
+        db_name: str = app.config.get("MONGODB_DATABASE") or app.config.get("MONGO_DB_NAME", "ota_rag_db")
         timeout_ms: int = app.config.get("MONGO_SERVER_SELECTION_TIMEOUT_MS", 2000)
         connect_timeout_ms: int = app.config.get("MONGO_CONNECT_TIMEOUT_MS", 2000)
 
@@ -56,8 +56,8 @@ class MongoExtension:
         try:
             self.client.admin.command("ping")
             return True
-        except PyMongoError as exc:
-            logger.warning(f"MongoDB ping failed: {exc}")
+        except (PyMongoError, Exception) as exc:
+            logger.warning("MongoDB ping failed. Dependency may be unreachable.")
             return False
 
     def close(self) -> None:
@@ -69,4 +69,3 @@ class MongoExtension:
 
 
 mongo = MongoExtension()
-

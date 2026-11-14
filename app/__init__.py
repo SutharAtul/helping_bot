@@ -18,11 +18,15 @@ def create_app(config_name: str | None = None) -> Flask:
 
     Returns:
         Flask application instance.
+
+    Raises:
+        ValueError: If production configuration validation fails at startup.
     """
     app = Flask(__name__)
 
-    # Load configuration
+    # Load and validate configuration
     config_cls = get_config(config_name)
+    config_cls.validate()
     app.config.from_object(config_cls)
 
     # Setup structured logging
@@ -45,6 +49,7 @@ def create_app(config_name: str | None = None) -> Flask:
                 {
                     "service": app.config.get("APP_NAME", "ota-rag-bot"),
                     "version": app.config.get("VERSION", "0.1.0"),
+                    "environment": app.config.get("APP_ENV", "unknown"),
                     "status": "online",
                     "docs_url": "/api/v1/health",
                 }
@@ -53,7 +58,6 @@ def create_app(config_name: str | None = None) -> Flask:
         )
 
     app.logger.info(
-        f"Application initialized successfully in {app.config.get('ENV')} mode"
+        f"Application initialized successfully in {app.config.get('APP_ENV')} mode"
     )
     return app
-
